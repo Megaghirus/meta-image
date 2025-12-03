@@ -6,7 +6,7 @@ import tempfile
 from datetime import datetime
 import mimetypes
 
-# Grupe / tag-uri pe care nu are sens să încercăm să le scriem
+# Grupe/tag-uri pe care nu are sens să încercăm să le scriem
 NON_WRITABLE_GROUPS = {"File", "System", "Composite"}
 ALWAYS_SKIP_TAGS = {"SourceFile", "Directory", "FileName"}
 RESERVED_TAGS = {
@@ -28,10 +28,7 @@ RESERVED_TAGS = {
 
 
 def find_first_tag(meta: dict, tag_names):
-    """
-    Caută primul tag din lista tag_names (fără grup)
-    în dict-ul meta (chei de forma 'Grup:Tag' sau 'Tag').
-    """
+    """Caută primul tag din listă (ignorând grupul)."""
     for key, value in meta.items():
         if ":" in key:
             _, t = key.split(":", 1)
@@ -68,10 +65,10 @@ def build_exiftool_cmd_from_fields(
     raw_meta: str,
     apply_raw: bool,
 ):
-    """Construiește lista de argumente pentru exiftool pe baza câmpurilor editate."""
+    """Construiește lista cu argumente pentru exiftool."""
     cmd = []
 
-    # câmpurile „standard”
+    # Câmpuri standard
     if title:
         cmd.append(f"-Title={title}")
         cmd.append(f"-XPTitle={title}")
@@ -88,8 +85,7 @@ def build_exiftool_cmd_from_fields(
         cmd.append(f"-Description={desc}")
 
     if keywords:
-        # mai întâi ștergem toate keywords
-        cmd.append("-Keywords=")
+        cmd.append("-Keywords=")  # golim mai întâi
         for kw in [k.strip() for k in keywords.split(",") if k.strip()]:
             cmd.append(f"-Keywords={kw}")
 
@@ -99,7 +95,7 @@ def build_exiftool_cmd_from_fields(
     if date_original:
         cmd.append(f"-DateTimeOriginal={date_original}")
 
-    # meta completă (advanced)
+    # Meta completă (avansat)
     if apply_raw and raw_meta:
         for line in raw_meta.splitlines():
             line = line.strip()
@@ -115,7 +111,6 @@ def build_exiftool_cmd_from_fields(
             if not key_raw:
                 continue
 
-            # separăm grupul de numele tag-ului (dacă există)
             if ":" in key_raw:
                 group, tag_name = key_raw.split(":", 1)
                 group = group.strip()
@@ -132,7 +127,7 @@ def build_exiftool_cmd_from_fields(
             if group in NON_WRITABLE_GROUPS:
                 continue
 
-            exiftool_tag = key_raw  # păstrăm și grupul
+            exiftool_tag = key_raw  # păstrăm și grupul dacă există
 
             if value == "":
                 cmd.append(f"-{exiftool_tag}=")
@@ -147,10 +142,8 @@ def build_exiftool_cmd_from_fields(
 st.set_page_config(page_title="Meta Image Editor", layout="wide")
 
 st.title("🖼️ Image Metadata Editor (Streamlit)")
-
 st.write(
-    "Încarcă una sau mai multe imagini, vezi meta datele și rescrie-le folosind ExifTool "
-    "(varianta web a aplicației desktop)."
+    "Încarcă una sau mai multe imagini, vezi meta datele și rescrie-le folosind ExifTool."
 )
 
 uploaded_files = st.file_uploader(
@@ -169,7 +162,7 @@ if "tempdir" not in st.session_state:
 
 tempdir = st.session_state["tempdir"]
 
-# salvăm fișierele încărcate pe disc
+# salvăm fișierele încărcate
 paths = []
 for uf in uploaded_files:
     path = os.path.join(tempdir, uf.name)
@@ -177,7 +170,7 @@ for uf in uploaded_files:
         f.write(uf.read())
     paths.append(path)
 
-# selectăm fișierul curent pentru inspectarea meta datelor
+# fișier curent pentru inspectarea meta datelor
 idx = 0
 if len(paths) > 1:
     idx = st.selectbox(
@@ -189,41 +182,49 @@ if len(paths) > 1:
 current_path = paths[idx]
 st.write(f"**Fișier curent:** `{os.path.basename(current_path)}`")
 
-# citim meta pentru fișierul selectat
 try:
     meta = read_metadata(current_path)
 except Exception as e:
     st.error(f"Eroare la citirea meta datelor cu exiftool: {e}")
     st.stop()
 
-# buton pentru preluarea meta în câmpurile editabile
-prefill = st.button("Preia meta din fișierul curent în câmpurile de mai jos")
+# inițializăm câmpurile când se schimbă fișierul curent
+if "current_file" not in st.session_state or st.session_state["current_file"] != current_path:
+    st.session_state["current_file"] = current_path
 
-# inițializăm câmpurile în session_state
-if "title" not in st.session_state or prefill:
-    st.session_state["title"] = find_first_tag(meta, ["Title", "ObjectName", "XPTitle"]) or ""
-    st.session_state["author"] = find_first_tag(meta, ["Artist", "Creator", "XPAuthor"]) or ""
-    st.session_state["desc"] = find_first_tag(
-        meta, ["Description", "ImageDescription", "XPComment"]
-    ) or ""
+    title = find_first_tag(meta, ["Title", "ObjectName", "XPTitle"]) or ""
+    author = find_first_tag(meta, ["Artist", "Creator", "XPAuthor"]) or ""
+    desc = find_first_tag(meta, ["Description", "ImageDescription", "XPComment"]) or ""
     kws = find_first_tag(meta, ["Keywords"])
     if isinstance(kws, list):
         kws = ", ".join(str(k) for k in kws)
-    st.session_state["keywords"] = kws or ""
-    st.session_state["copyright"] = find_first_tag(meta, ["Copyright"]) or ""
+    keywords = kws or ""
+    copyright_text = find_first_tag(meta, ["Copyright"]) or ""
     date_original = (
         find_first_tag(meta, ["DateTimeOriginal"])
         or find_first_tag(meta, ["CreateDate"])
         or find_first_tag(meta, ["ModifyDate"])
+        or ""
     )
-    st.session_state["date_original"] = date_original or ""
 
-    # meta completă ca text
+    st.session_state["title"] = title
+    st.session_state["author"] = author
+    st.session_state["desc"] = desc
+    st.session_state["keywords"] = keywords
+    st.session_state["copyright"] = copyright_text
+    # aici folosim o cheie separată pentru input-ul de dată
+    st.session_state["date_original_input"] = date_original
+
+    # meta completă text (editabilă)
     lines = []
     for tag in sorted(meta.keys()):
         value = meta[tag]
         lines.append(f"{tag} = {value}")
     st.session_state["raw_meta"] = "\n".join(lines)
+
+# callback pentru butonul „Data curentă”
+def set_current_date():
+    st.session_state["date_original_input"] = datetime.now().strftime("%Y:%m:%d %H:%M:%S")
 
 # layout pe două coloane
 col1, col2 = st.columns([1, 1])
@@ -260,26 +261,24 @@ with col1:
     with date_col1:
         st.text_input(
             "Data originală (YYYY:MM:DD HH:MM:SS, ex: 2025:12:02 10:15:00)",
-            key="date_original",
+            key="date_original_input",
         )
     with date_col2:
-        if st.button("Data curentă"):
-            st.session_state["date_original"] = datetime.now().strftime(
-                "%Y:%m:%d %H:%M:%S"
-            )
+        st.button("Data curentă", on_click=set_current_date)
 
 with col2:
     st.subheader("Meta completă (editabilă – avansat)")
     st.write(
         "Format: `Grup:Tag = valoare` (o meta pe linie). "
-        "Tag-urile de fișier (File/System/Composite) sunt ignorate automat."
+        "Tag-urile de fișier (File/System/Composite) sunt ignorate automat.\n"
+        "Tot ce scrii aici este aplicat în fișiere dacă bifezi checkbox-ul de mai jos."
     )
     st.text_area(
         "Editează meta datele brute",
         key="raw_meta",
         height=300,
     )
-    apply_raw = st.checkbox(
+    st.checkbox(
         "Aplică și modificările din meta completă",
         key="apply_raw",
         value=False,
@@ -287,14 +286,14 @@ with col2:
 
 st.markdown("---")
 
-# buton de aplicare
+# buton de scriere în fișiere
 if st.button("✏️ Scrie meta date în toate fișierele încărcate"):
     title = st.session_state.get("title", "").strip()
     author = st.session_state.get("author", "").strip()
     desc = st.session_state.get("desc", "").strip()
     keywords = st.session_state.get("keywords", "").strip()
     copyright_text = st.session_state.get("copyright", "").strip()
-    date_original = st.session_state.get("date_original", "").strip()
+    date_original = st.session_state.get("date_original_input", "").strip()
     raw_meta = st.session_state.get("raw_meta", "")
     apply_raw = st.session_state.get("apply_raw", False)
 
@@ -319,7 +318,6 @@ if st.button("✏️ Scrie meta date în toate fișierele încărcate"):
         apply_raw,
     )
 
-    # dacă nu e nimic de aplicat, oprim
     if not base_cmd:
         st.warning("Niciun tag de rescris. Verifică datele introduse.")
         st.stop()
@@ -338,7 +336,7 @@ if st.button("✏️ Scrie meta date în toate fișierele încărcate"):
     except FileNotFoundError:
         st.error(
             "Nu am găsit `exiftool` în mediu. "
-            "Pe Streamlit Cloud adaugă un fișier `packages.txt` cu o linie:\n\n`exiftool`"
+            "Pe Streamlit Cloud ai nevoie de un fișier `packages.txt` cu o linie:\n\n`exiftool`"
         )
         st.stop()
 
@@ -352,6 +350,8 @@ if st.button("✏️ Scrie meta date în toate fișierele încărcate"):
 
         st.subheader("Descarcă fișierele modificate")
         for p in paths:
+            if not os.path.exists(p):
+                continue
             with open(p, "rb") as f:
                 data = f.read()
             mime, _ = mimetypes.guess_type(p)
